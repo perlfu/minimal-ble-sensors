@@ -8,8 +8,8 @@ import subprocess
 import sys
 
 
-RECV_BIN = './recv-estimote'
-HCI_DEV = 'hci1'
+RECV_BIN = './recv-sensors'
+HCI_DEV = 'hci0'
 DATA_DIR = 'data'
 POST_URL = None 
 
@@ -49,12 +49,23 @@ def deduce_motion(vs):
 
 
 def mean(vs):
-    s = sum(vs)
     if len(vs) > 0:
-        return float(s) / float(len(vs))
+        return float(sum(vs)) / float(len(vs))
     else:
         return float('nan')
 
+def mean3(vs):
+    if len(vs) > 0:
+        x = sum(map(lambda x:x[0], vs))
+        y = sum(map(lambda x:x[1], vs))
+        z = sum(map(lambda x:x[2], vs))
+        return [
+            float(x) / float(len(vs)),
+            float(y) / float(len(vs)),
+            float(z) / float(len(vs)),
+        ]
+    else:
+        return [float('nan'), float('nan'), float('nan')]
 
 def output_worker(data):
     headers = { 'Content-Type': 'application/json' }
@@ -82,7 +93,10 @@ def main_loop(input_fh, interval=60):
     proc = {
         'temperature': mean, 
         'light_level': mean, 
-        'pressure': mean, 
+        'pressure': mean,
+        'humidity': mean,
+        'accelerometer': mean3,
+        'motion_counter': max,
         'battery_level': min, 
         'battery_voltage': min,
         'in_motion': max,

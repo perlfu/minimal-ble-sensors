@@ -1,4 +1,4 @@
-/* cc -O2 -Wall recv-estimote.c -o recv-estimote -lbluetooth */
+/* cc -O2 -Wall recv-sensors.c -o recv-sensors -lbluetooth */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <signal.h>
 #include <time.h>
+#include <errno.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
@@ -45,7 +46,7 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
     if (len == 20) {
         uint8_t sub_frame_type = data[9];
         char name[32], mac[16];
-        
+
         snprintf(mac, sizeof(mac), "%02x%02x%02x%02x%02x%02x",
             addr.b[0], addr.b[1], addr.b[2], addr.b[3], addr.b[4], addr.b[5]);
 
@@ -88,7 +89,7 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
                 if (buf != 0xffffffff)
                     pressure = ((float)btohl(buf)) / 256.0;
             }
-            
+
             fprintf(stdout, "{ "
                     "\"ts\": %llu, "
                     "\"mac\": \"%s\", "
@@ -103,9 +104,9 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
                 "}\n",
                 (long long unsigned) ts,
                 mac, name,
-                accel_x, accel_y, accel_z, 
-                in_motion ? "true" : "false", 
-                motion_p, motion_p_unit, 
+                accel_x, accel_y, accel_z,
+                in_motion ? "true" : "false",
+                motion_p, motion_p_unit,
                 motion_c, motion_c_unit,
                 gpio0, gpio1, gpio2, gpio3,
                 clk_error ? "true" : "false",
@@ -125,7 +126,7 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
             int temp = (data[15] & 0xc0) >> 6 | (data[16] << 2) | ((data[17] & 0x3) << 10);
             int temp_s = temp > 2047 ? temp - 4096 : temp;
             float celsius = temp_s / 16.0;
-   
+
             int battery_v = (data[18] << 6) | (data[17] >> 2);
             int battery_l = -1;
 
@@ -135,7 +136,7 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
             int _uptime_unit = (data[15] >> 4) & 0x3;
             char uptime_unit = ' ';
             int uptime_val = ((data[15] & 0xf) << 8) | data[14];
-            
+
             // uptime
             switch (_uptime_unit) {
                 case 0: uptime_unit = 's'; break;
@@ -147,7 +148,7 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
             // battery voltage
             if (battery_v == 0x3fff)
                 battery_v = -1;
-            
+
             // errors & battery level
             if (protocol == 0) {
                 fw_error = (data[15] >> 0) & 0x1;
@@ -176,7 +177,7 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
                     "\"clock_error\": %s, "
                     "\"firmware_error\": %s "
                 "}\n",
-                (long long unsigned)ts, 
+                (long long unsigned)ts,
                 mac, name,
                 mag_x, mag_y, mag_z,
                 lux,
@@ -186,6 +187,62 @@ static void process_estimote(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
                 clk_error ? "true" : "false",
                 fw_error ? "true" : "false");
         }
+    }
+}
+
+static void process_ruuvitag(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *data, int len) {
+    uint8_t header = data[0];
+
+    // only interested in full format 5 (RAWv2) packets
+    if (header == 0x05 && len == 24) {
+        char name[16], mac[16];
+        int16_t temp_raw = (data[1] << 8) | data[2];
+        float temperature = ((float)temp_raw) * 0.005f;
+        uint16_t humidity_raw = (data[3] << 8) | data[4];
+        float humidity = ((float)humidity_raw) * 0.0025f;
+        uint16_t pressure_raw = (data[5] << 8) | data[6];
+        unsigned int pressure = 50000 + pressure_raw;
+        int16_t accel_x_raw = (data[7] << 8) | data[8];
+        float accel_x = ((float)accel_x_raw) / 1000.0f;
+        int16_t accel_y_raw = (data[9] << 8) | data[10];
+        float accel_y = ((float)accel_y_raw) / 1000.0f;
+        int16_t accel_z_raw = (data[11] << 8) | data[12];
+        float accel_z = ((float)accel_z_raw) / 1000.0f;
+        uint16_t voltage_raw = (data[13] << 3) | (data[14] >> 5);
+        float voltage = 1.6f + (((float)voltage_raw) / 1000.0);
+        int tx_power = (-40) + ((int)(data[14] & 0x1f)) * 2;
+        uint8_t movement_counter = data[15];
+        uint16_t sequence = (data[16] << 8) | data[17];
+
+        snprintf(mac, sizeof(mac), "%02x%02x%02x%02x%02x%02x",
+            addr.b[0], addr.b[1], addr.b[2], addr.b[3], addr.b[4], addr.b[5]);
+
+        snprintf(name, sizeof(name), "%02x%02x%02x%02x%02x%02x",
+            data[18], data[19], data[20], data[21], data[22], data[23]);
+
+        fprintf(stdout, "{ "
+                "\"ts\": %llu, "
+                "\"mac\": \"%s\", "
+                "\"id\": \"%s\", "
+                "\"temperature\": %.2f, "
+                "\"humidity\": %.2f, "
+                "\"pressure\": %u, "
+                "\"accelerometer\": [%.3f, %.3f, %.3f], "
+                "\"battery_voltage\": %.4f, "
+                "\"tx_power\": %d, "
+                "\"movement_counter\": %u, "
+                "\"sequence\": %u "
+            "}\n",
+            (long long unsigned)ts,
+            mac, name,
+            temperature,
+            humidity,
+            pressure,
+            accel_x, accel_y, accel_z,
+            voltage,
+            tx_power,
+            movement_counter,
+            sequence);
     }
 }
 
@@ -199,7 +256,7 @@ static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
     while (ptr < (len - 2)) {
         int ulen = data[ptr + 0];
         int dtype = data[ptr + 1];
-        
+
         if ((ptr + ulen) > len)
             ulen = len - ptr;
 
@@ -209,7 +266,7 @@ static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
         switch (dtype) {
             case 0x01: // flags
                 if (ulen >= 1);
-                    flags = data[ptr]; 
+                    flags = data[ptr];
                 break;
             case 0x02: case 0x03: // 16-bit uuids
                 // ignoring that there may be multiple
@@ -220,6 +277,7 @@ static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
                 }
                 break;
             case 0x16: // service data
+            case 0xff: // manufacturer specific data
                 if (ulen >= 2) {
                     uint16_t buf;
                     memcpy(&buf, data + ptr, sizeof(buf));
@@ -236,17 +294,19 @@ static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
     }
 
     #if 0
-    fprintf(stderr, "uuid = %04x, flags = %02x, service uuid = %04x, service data = %d bytes\n", 
+    fprintf(stderr, "uuid = %04x, flags = %02x, service uuid = %04x, service data = %d bytes\n",
                         uuid, flags, s_uuid, s_data_len);
     #endif
     if (uuid == 0xfe9a && s_uuid == 0xfe9a && s_data_len > 0) {
         process_estimote(ts, addr, flags, s_data, s_data_len);
+    } else if (uuid == 0x0000 && s_uuid == 0x0499 && s_data_len > 0) {
+        process_ruuvitag(ts, addr, flags, s_data, s_data_len);
     }
 }
 
 static void check_exit(int val, const char *msg) {
     if (val < 0) {
-        fprintf(stderr, "error: %s (%d)\n", msg, val);
+        fprintf(stderr, "error: %s (%d), errno = %s (%d)\n", msg, val, strerror(errno), errno);
         exit(1);
     }
 }
@@ -260,7 +320,7 @@ static void shutdown_signal(int sig) {
 int main(int argc, char *argv[]) {
     struct hci_filter new_options, old_options;
     socklen_t slen = sizeof(old_options);
-    
+
     int last_ts = 0;
     int cmd_timeout = 1000; // for commands sent to HCI
     uint8_t scan_type = 0x00; // passive type
@@ -271,9 +331,9 @@ int main(int argc, char *argv[]) {
     char *dev_name = "hci0";
     int result;
     int attempt;
-    int dev_id; 
+    int dev_id;
     int dev;
-   
+
     signal(SIGINT, shutdown_signal);
 
     if (argc > 1)
@@ -284,15 +344,15 @@ int main(int argc, char *argv[]) {
     // get device number
     dev_id  = hci_devid(dev_name);
     check_exit(dev_id, "unable to find device");
-    
+
     // open device handle
     dev     = hci_open_dev(dev_id);
-    check_exit(dev_id, "unable open device");
-    
+    check_exit(dev, "unable open device");
+
     // try to set BLE parameters
     for (attempt = 1; attempt >= 0; attempt--) {
-        result  = hci_le_set_scan_parameters(dev, 
-            scan_type, interval, window, 
+        result  = hci_le_set_scan_parameters(dev,
+            scan_type, interval, window,
             own_type, filter_policy, cmd_timeout);
 
         // try to disable old scan; if parameter set failed
@@ -302,7 +362,7 @@ int main(int argc, char *argv[]) {
         }
     }
     check_exit(result, "unable to set scan parameters");
-    
+
     // enable BLE scan
     result = hci_le_set_scan_enable(dev, 0x01, 1, cmd_timeout);
     check_exit(result, "unable to start scan");
@@ -324,7 +384,7 @@ int main(int argc, char *argv[]) {
         struct timeval wait;
         fd_set read_set;
         int len;
-       
+
         // wait 1 second for a packet
         memset(&wait, 0, sizeof(wait));
         wait.tv_sec = 1;
@@ -337,11 +397,11 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "error: select returned %d\n", result);
             break;
         }
-        
+
         // if there was a packet then read and process it
         if (result) {
             int ts = time(NULL);
-            
+
             // read event packet
             len = read(dev, buffer, sizeof(buffer));
             if (len > HCI_EVENT_HDR_SIZE) {
@@ -350,7 +410,7 @@ int main(int argc, char *argv[]) {
                 evt_le_meta_event *meta = (evt_le_meta_event *) ptr;
 
                 len -= (1 + HCI_EVENT_HDR_SIZE);
-                
+
                 // hand off suitable packets for decoding
                 if (meta->subevent == EVT_LE_ADVERTISING_REPORT) {
                     le_advertising_info *info = (le_advertising_info *) (meta->data + 1);
