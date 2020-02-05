@@ -67,6 +67,28 @@ def mean3(vs):
     else:
         return [float('nan'), float('nan'), float('nan')]
 
+
+def max_vec3(vs):
+    max_v = None
+    for sample in vs:
+        (x, y, z) = sample
+        mag = x*x + y*y + z*z
+        if max_v and mag > max_v[0]:
+            max_v = (mag, x, y, z)
+    if max_v:
+        (mag, x, y, z) = max_v
+        return [x, y, z]
+    else:
+        return [float('nan'), float('nan'), float('nan')]
+
+
+def latest(vs):
+    if vs:
+        return vs[-1]
+    else:
+        return None
+
+
 def output_worker(data):
     headers = { 'Content-Type': 'application/json' }
     try:
@@ -95,8 +117,8 @@ def main_loop(input_fh, interval=60):
         'light_level': mean, 
         'pressure': mean,
         'humidity': mean,
-        'accelerometer': mean3,
-        'motion_counter': max,
+        'accelerometer': max_vec3,
+        'movement_counter': latest,
         'battery_level': min, 
         'battery_voltage': min,
         'in_motion': max,
