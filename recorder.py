@@ -75,6 +75,8 @@ def max_vec3(vs):
         mag = x*x + y*y + z*z
         if max_v and mag > max_v[0]:
             max_v = (mag, x, y, z)
+        else:
+            max_v = (mag, x, y, z)
     if max_v:
         (mag, x, y, z) = max_v
         return [x, y, z]
