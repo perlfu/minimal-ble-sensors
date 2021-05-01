@@ -265,7 +265,7 @@ static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
 
         switch (dtype) {
             case 0x01: // flags
-                if (ulen >= 1);
+                if (ulen >= 1)
                     flags = data[ptr];
                 break;
             case 0x02: case 0x03: // 16-bit uuids
