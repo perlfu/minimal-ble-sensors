@@ -101,7 +101,7 @@ def output_worker(data):
 
 
 def output_data(data, ts):
-    gm = time.gmtime(ts)
+    gm = time.localtime(ts)
     day_file = '%04d%02d%02d.json' % (gm[0], gm[1], gm[2])
     json_data = json.dumps(data)
     
