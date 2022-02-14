@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import json
 import threading
@@ -97,7 +97,7 @@ def output_worker(data):
         import requests
         response = requests.post(POST_URL, headers=headers, data=data) 
     except Exception as e:
-        print >>sys.stderr, 'post to {} failed: {}'.format(POST_URL, e)    
+        print('post to {} failed: {}'.format(POST_URL, e), file=sys.stderr)
 
 
 def output_data(data, ts):
@@ -107,7 +107,7 @@ def output_data(data, ts):
     
     if DATA_DIR:
         with open(os.path.join(DATA_DIR, day_file), 'a') as f:
-            print >>f, json_data
+            print(json_data, file=f)
     if POST_URL:
         th = threading.Thread(target=output_worker, args=(json_data, ts))
         th.start()
@@ -147,7 +147,7 @@ def main_loop(input_fh, interval=60):
                     samples[_id][key] = []
                 samples[_id][key].append(data[key])
         except Exception as e:
-            print >>sys.stderr, e
+            print(e, file=sys.stderr)
         
         if (ts - last_ts) >= interval:
             output = []
@@ -176,7 +176,7 @@ def main(args):
         try:
             proc.terminate()
         except Exception as e:
-            print >>sys.stderr, e
+            print(e, file=sys.stderr)
     
     proc.wait()
 
