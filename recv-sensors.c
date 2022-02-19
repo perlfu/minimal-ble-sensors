@@ -246,6 +246,61 @@ static void process_ruuvitag(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *d
     }
 }
 
+static void process_switchbot(time_t ts, bdaddr_t addr, uint8_t flags, uint8_t *data, int len) {
+    uint8_t name0 = data[0];
+    uint8_t name1 = data[1];
+    uint8_t name2 = data[2];
+    uint8_t name3 = data[3];
+    uint8_t name4 = data[4];
+    uint8_t name5 = data[5];
+
+    // There is no header magic, but first 6 bytes should be MAC (reversed).
+    if (addr.b[0] != name5 || addr.b[1] != name4 || addr.b[2] != name3 ||
+        addr.b[3] != name2 || addr.b[4] != name1 || addr.b[5] != name0) {
+        return;
+    }
+
+    // PIR packets have 4 bytes of data.
+    if (len == 10) {
+        // The public API documentation for SwitchBot describes explicit responses in
+        // the 0x16 service data, but the devices out of box continuously broadcast
+        // 0xff manufacturer data every few seconds.
+        // byte 0   = Motion event counter
+        // byte 1   = Flags:
+        //              0x40 motion happening now
+        //              0x01 high bit of counter (below)
+        //            Observed values of this byte:
+        //              0x2c, 0x6c, 0x2d
+        // byte 2-3 = Counter of seconds since last motion started.
+        //            This counter does not rollover but stays at
+        //            0x1ffff when >= 131071 seconds have passed.
+        char mac[16], name[16];
+        uint8_t motion_count = data[6];
+        uint8_t flags = data[7];
+        uint32_t seconds_since = (((flags & 0x04) >> 3) << 16) | (data[8] << 8) | data[9];
+        uint8_t motion = !!(flags & 0x40);
+
+        snprintf(name, sizeof(name), "%02x%02x%02x%02x%02x%02x",
+            name0, name1, name2, name3, name4, name5);
+        snprintf(mac, sizeof(mac), "%02x%02x%02x%02x%02x%02x",
+            addr.b[0], addr.b[1], addr.b[2], addr.b[3], addr.b[4], addr.b[5]);
+
+        fprintf(stdout, "{ "
+                "\"ts\": %llu, "
+                "\"mac\": \"%s\", "
+                "\"id\": \"%s\", "
+                "\"motion\": %s, "
+                "\"motion_count\": %u, "
+                "\"seconds_since\": %u "
+            "}\n",
+            (long long unsigned)ts,
+            mac, name,
+            motion ? "true" : "false",
+            motion_count,
+            seconds_since);
+    }
+}
+
 static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
     uint16_t uuid = 0, s_uuid = 0;
     uint8_t *s_data = NULL;
@@ -293,14 +348,24 @@ static void decode_gap(time_t ts, bdaddr_t addr, uint8_t *data, const int len) {
         ptr += ulen;
     }
 
-    #if 0
-    fprintf(stderr, "uuid = %04x, flags = %02x, service uuid = %04x, service data = %d bytes\n",
-                        uuid, flags, s_uuid, s_data_len);
-    #endif
     if (uuid == 0xfe9a && s_uuid == 0xfe9a && s_data_len > 0) {
         process_estimote(ts, addr, flags, s_data, s_data_len);
     } else if (uuid == 0x0000 && s_uuid == 0x0499 && s_data_len > 0) {
         process_ruuvitag(ts, addr, flags, s_data, s_data_len);
+    } else if (/* uuid == 0x0000 && */ s_uuid == 0x0969 && s_data_len >= 6) {
+        // XXX: Sometimes advertisements are not uuid 0x0000; unsure why?
+        process_switchbot(ts, addr, flags, s_data, s_data_len);
+    } else {
+        #if 0
+        char mac[16];
+        snprintf(mac, sizeof(mac), "%02x%02x%02x%02x%02x%02x",
+            addr.b[0], addr.b[1], addr.b[2], addr.b[3], addr.b[4], addr.b[5]);
+        fprintf(stderr, "mac = %s, uuid = %04x, flags = %02x, service uuid = %04x, service data = %d bytes\n",
+                            mac, uuid, flags, s_uuid, s_data_len);
+        for (int i = 0; i < s_data_len; i++)
+            fprintf(stderr, "  %02x", s_data[i]);
+        fprintf(stderr, "\n");
+        #endif
     }
 }
 

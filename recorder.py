@@ -124,6 +124,9 @@ def main_loop(input_fh, interval=60):
         'battery_level': min, 
         'battery_voltage': min,
         'in_motion': max,
+        'motion': max,
+        'motion_count': latest,
+        'seconds_since': latest,
         'motion_duration': deduce_motion,
         'uptime': lambda vs:min(map(decode_tm, vs))
     }
