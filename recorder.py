@@ -12,6 +12,15 @@ RECV_BIN = './recv-sensors'
 HCI_DEV = 'hci0'
 DATA_DIR = 'data'
 
+MQTT_HOST = "localhost"
+MQTT_PORT = 1883
+MQTT_TOPIC = "ble-sensors/raw"
+
+try:
+    import paho.mqtt.client as mqtt
+except:
+    MQTT_HOST = None
+
 
 def decode_tm(tm):
     unit = tm[-1]
@@ -100,7 +109,7 @@ def output_data(data, ts):
             print(json_data, file=f)
 
 
-def main_loop(input_fh, interval=60):
+def main_loop(input_fh, mqtt_client, interval=60):
     proc = {
         'temperature': mean, 
         'light_level': mean, 
@@ -124,10 +133,10 @@ def main_loop(input_fh, interval=60):
         ts = last_ts
         try:
             data = json.loads(line)
-            
+
             ts = data['ts']
             if last_ts == 0:
-                last_ts = ts 
+                last_ts = ts
 
             _id = data['id']
             if _id not in samples:
@@ -136,9 +145,12 @@ def main_loop(input_fh, interval=60):
                 if key not in samples[_id]:
                     samples[_id][key] = []
                 samples[_id][key].append(data[key])
+
+            if mqtt_client:
+                mqtt_client.publish(MQTT_TOPIC, payload=json.dumps(data))
         except Exception as e:
             print(e, file=sys.stderr)
-        
+
         if (ts - last_ts) >= interval:
             output = []
 
@@ -156,10 +168,17 @@ def main_loop(input_fh, interval=60):
 
 
 def main(args):
+    if MQTT_HOST:
+      mqtt_client = mqtt.Client()
+      mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
+      mqtt_client.loop_start()
+    else:
+      mqtt_client = None
+
     proc = subprocess.Popen([RECV_BIN, HCI_DEV], stdout=subprocess.PIPE)
-    
+
     try:
-        main_loop(proc.stdout)
+        main_loop(proc.stdout, mqtt_client)
     except KeyboardInterrupt:
         pass
     finally:
@@ -167,8 +186,11 @@ def main(args):
             proc.terminate()
         except Exception as e:
             print(e, file=sys.stderr)
-    
+
     proc.wait()
+
+    if mqtt_client:
+        mqtt_client.loop_stop()
 
 
 if __name__ == "__main__":
