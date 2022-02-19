@@ -11,7 +11,6 @@ import sys
 RECV_BIN = './recv-sensors'
 HCI_DEV = 'hci0'
 DATA_DIR = 'data'
-POST_URL = None 
 
 
 def decode_tm(tm):
@@ -91,15 +90,6 @@ def latest(vs):
         return None
 
 
-def output_worker(data):
-    headers = { 'Content-Type': 'application/json' }
-    try:
-        import requests
-        response = requests.post(POST_URL, headers=headers, data=data) 
-    except Exception as e:
-        print('post to {} failed: {}'.format(POST_URL, e), file=sys.stderr)
-
-
 def output_data(data, ts):
     gm = time.localtime(ts)
     day_file = '%04d%02d%02d.json' % (gm[0], gm[1], gm[2])
@@ -108,9 +98,6 @@ def output_data(data, ts):
     if DATA_DIR:
         with open(os.path.join(DATA_DIR, day_file), 'a') as f:
             print(json_data, file=f)
-    if POST_URL:
-        th = threading.Thread(target=output_worker, args=(json_data, ts))
-        th.start()
 
 
 def main_loop(input_fh, interval=60):
