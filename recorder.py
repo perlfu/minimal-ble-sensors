@@ -103,7 +103,7 @@ def output_data(data, ts):
     gm = time.localtime(ts)
     day_file = '%04d%02d%02d.json' % (gm[0], gm[1], gm[2])
     json_data = json.dumps(data)
-    
+
     if DATA_DIR:
         with open(os.path.join(DATA_DIR, day_file), 'a') as f:
             print(json_data, file=f)
@@ -111,13 +111,13 @@ def output_data(data, ts):
 
 def main_loop(input_fh, mqtt_client, interval=60):
     proc = {
-        'temperature': mean, 
-        'light_level': mean, 
+        'temperature': mean,
+        'light_level': mean,
         'pressure': mean,
         'humidity': mean,
         'accelerometer': max_vec3,
         'movement_counter': latest,
-        'battery_level': min, 
+        'battery_level': min,
         'battery_voltage': min,
         'in_motion': max,
         'motion': max,
